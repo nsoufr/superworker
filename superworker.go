@@ -1,6 +1,7 @@
 package superworker
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -35,6 +36,9 @@ type processor struct {
 }
 
 func (w *Worker) Run() {
+	flag.IntVar(&w.Concurrency, "concurrency", 5, "concurrency")
+	flag.Parse()
+
 	stopChan := make(chan struct{}, 1)
 
 	w.startProcessors(stopChan)

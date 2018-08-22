@@ -22,8 +22,7 @@ func main() {
 	}
 
 	worker := superworker.Worker{
-		Concurrency: 10,
-		Queues:      []string{"normal"},
+		Queues: []string{"normal"},
 		Executors: map[string]superworker.Executor{
 			"put-item-to-service": &MyWorker{},
 		},
