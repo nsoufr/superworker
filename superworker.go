@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -47,54 +46,58 @@ func (w *Worker) Run() {
 
 		// notify processors about errors
 		stopChan <- struct{}{}
-		time.Sleep(9 * time.Second)
+		time.Sleep(2 * time.Second)
 		os.Exit(0)
 	}
 }
 
 func (w *Worker) startProcessors(stop <-chan struct{}) {
-	go func() {
-		for {
-			select {
-			case <-stop:
-				log.Println("stopping processors")
-				return
-			default:
-				{
-					w.process()
-				}
-			}
-		}
-	}()
+	go w.process(stop)
 }
 
-func (w *Worker) process() {
-	wg := &sync.WaitGroup{}
-	wg.Add(w.Concurrency)
+func (w *Worker) process(stop <-chan struct{}) {
+	bucket := make(chan struct{}, w.Concurrency)
+
+	for i := 0; i < w.Concurrency; i++ {
+		bucket <- struct{}{}
+	}
 
 	for {
-		for _, q := range w.Queues {
-			j, err := w.Storage.Pull(q)
-			// not a better place for this
-			if err.Error() == "redis: nil" {
-				log.Printf("there is no  job in %s queue\n", q)
-				return
-			}
+		select {
+		case <-stop:
+			log.Println("stopping processors")
+			return
+		default:
+			<-bucket
+			go func() {
+				for _, q := range w.Queues {
+					j, err := w.Storage.Pull(q)
+					// not a better place for this
+					if err.Error() == "redis: nil" {
+						time.Sleep(1 * time.Second)
+						continue
+					}
 
-			if err != nil {
-				log.Printf("%s while dequeuing from %s\n", err, q)
-				return
-			}
-			if w.Executors[j.Name] == nil {
-				log.Printf("There is no executor registered for %s\n", j.Name)
-			}
+					if err != nil {
+						log.Printf("%s while dequeuing from %s\n", err, q)
+						continue
+					}
+					if w.Executors[j.Name] == nil {
+						continue
 
-			err = w.Executors[j.Name].Execute(*j, w)
-			if err != nil {
-				log.Println(err)
-			}
+					}
+
+					err = w.Executors[j.Name].Execute(*j, w)
+					if err != nil {
+						log.Println(err)
+						continue
+					}
+
+				}
+				bucket <- struct{}{}
+			}()
+
 		}
-
 	}
 }
 
