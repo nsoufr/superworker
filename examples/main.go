@@ -10,7 +10,7 @@ import (
 type myWorker struct{}
 
 func (m *myWorker) Process(job superworker.Job) error {
-
+	return nil
 }
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 
 	server := superworker.NewServer()
 	server.Storage = storage
+
 	server.AddWorker("create-lead", &myWorker{})
 	server.Run()
-
 }

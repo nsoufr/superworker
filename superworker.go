@@ -4,9 +4,7 @@ type Worker interface {
 	Process(j Job) error
 }
 
-type WorkerEntry struct {
-	Concurrency int
-}
+
 
 type Job struct {
 	Id         string   `json:"id"`

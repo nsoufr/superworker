@@ -1,6 +1,7 @@
 package superworker
 
 import (
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -8,48 +9,34 @@ import (
 	"time"
 )
 
-type workerEntry struct {
-	concurrency int
-	worker      Worker
-	opts        *WorkerOpts
-}
-
 type Server struct {
 	Queues  []string
 	Storage Storage
-	workers map[string]workerEntry
+	workers map[string]Worker
 }
 
-type WorkerOpts struct {
-	Concurrency int
+type ServerOptions struct {
+	Concurrency  int
+	WorkersToRun []string // TODO
 }
 
-func (s *Server) AddWorker(pattern string, worker Worker, opts *WorkerOpts) {
-	o := WorkerOpts{}
-
-	if opts != nil {
-		o = *opts
-	}
-
+func (s *Server) AddWorker(pattern string, worker Worker) {
 	if pattern == "" {
 		panic("superworker: invalid pattern")
 	}
 	if worker == nil {
 		panic("superworker: nil handler")
 	}
+
 	if _, exist := s.workers[pattern]; exist {
 		panic("superworker: multiple registrations for " + pattern)
 	}
 
 	if s.workers == nil {
-		s.workers = make(map[string]workerEntry)
+		s.workers = make(map[string]Worker)
 	}
 
-	s.workers[pattern] = workerEntry{worker: worker, opts: &o}
-}
-
-type WorkerOptions struct {
-	Concurrency int
+	s.workers[pattern] = worker
 }
 
 func NewServer() *Server {
@@ -57,9 +44,11 @@ func NewServer() *Server {
 }
 
 func (w *Server) Run() {
+	opts := parseOptions()
+	log.Printf("%s: %+v\n", "Starting server with options", *opts)
 	stopChan := make(chan struct{}, 1)
 
-	w.startProcessors(stopChan)
+	w.startManager(stopChan, opts)
 	m := w.trapSignals()
 
 	select {
@@ -73,11 +62,14 @@ func (w *Server) Run() {
 	}
 }
 
-func (w *Server) startProcessors(stop <-chan struct{}) {
-	go w.process(stop)
+func (w *Server) startManager(stop <-chan struct{}, opts *ServerOptions) {
+	go w.process(stop, opts)
 }
 
-func (w *Server) process(stop <-chan struct{}) {
+func (w *Server) process(stop <-chan struct{}, options *ServerOptions) {
+	opts := *options
+	// Separate process as an entity
+
 	bucket := make(chan struct{}, opts.Concurrency)
 
 	for i := 0; i < opts.Concurrency; i++ {
@@ -92,29 +84,23 @@ func (w *Server) process(stop <-chan struct{}) {
 		default:
 			<-bucket
 			go func() {
-				for _, q := range w.Queues {
-					j, err := w.Storage.Pull(q)
-					// not a better place for this
+				for queue, worker := range w.workers {
+					j, err := w.Storage.Pull(queue)
 					if err.Error() == "redis: nil" {
 						time.Sleep(1 * time.Second)
 						continue
 					}
 
 					if err != nil {
-						log.Printf("%s while dequeuing from %s\n", err, q)
+						log.Printf("%s while dequeuing from %s\n", err, queue)
 						continue
 					}
-					if w.Executors[j.Name] == nil {
-						continue
 
-					}
-
-					err = w.Executors[j.Name].Execute(*j, w)
+					err = worker.Process(*j)
 					if err != nil {
 						log.Println(err)
 						continue
 					}
-
 				}
 				bucket <- struct{}{}
 			}()
@@ -127,4 +113,13 @@ func (w *Server) trapSignals() (c chan os.Signal) {
 	c = make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM)
 	return c
+}
+
+func parseOptions() *ServerOptions {
+	o := ServerOptions{}
+
+	flag.IntVar(&o.Concurrency, "concurrency", 20, "Concurrency: How many go-routines should execute workload.")
+	flag.Parse()
+
+	return &o
 }
