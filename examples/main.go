@@ -21,13 +21,14 @@ func main() {
 		return
 	}
 
-	worker := superworker.Worker{
-		Queues: []string{"normal"},
-		Executors: map[string]superworker.Executor{
-			"put-item-to-service": &MyWorker{},
-		},
-		Storage: storage,
+	worker := superworker.NewWorker()
+	worker.Queues = []string{"normal"}
+	worker.Executors = map[string]superworker.Executor{
+		"put-item-to-service": &MyWorker{},
 	}
 
+	worker.AddHandler("put-item-to-service", MyWorker)
+
+	worker.Storage = storage
 	worker.Run()
 }
