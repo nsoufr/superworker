@@ -1,8 +1,6 @@
 package superworker
 
 import (
-	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -10,25 +8,55 @@ import (
 	"time"
 )
 
-type Worker struct {
-	Queues    []string
-	Executors map[string]Executor
-	Storage   Storage
-	Options   *WorkerOptions
+type workerEntry struct {
+	concurrency int
+	worker      Worker
+	opts        *WorkerOpts
+}
+
+type Server struct {
+	Queues  []string
+	Storage Storage
+	workers map[string]workerEntry
+}
+
+type WorkerOpts struct {
+	Concurrency int
+}
+
+func (s *Server) AddWorker(pattern string, worker Worker, opts *WorkerOpts) {
+	o := WorkerOpts{}
+
+	if opts != nil {
+		o = *opts
+	}
+
+	if pattern == "" {
+		panic("superworker: invalid pattern")
+	}
+	if worker == nil {
+		panic("superworker: nil handler")
+	}
+	if _, exist := s.workers[pattern]; exist {
+		panic("superworker: multiple registrations for " + pattern)
+	}
+
+	if s.workers == nil {
+		s.workers = make(map[string]workerEntry)
+	}
+
+	s.workers[pattern] = workerEntry{worker: worker, opts: &o}
 }
 
 type WorkerOptions struct {
 	Concurrency int
 }
 
-func NewWorker() *Worker {
-	opts := parseOptions()
-	return &Worker{Options: opts}
+func NewServer() *Server {
+	return &Server{}
 }
 
-func (w *Worker) Run() {
-	fmt.Printf("%s: %+v\n", "starting with opts", *w.Options)
-
+func (w *Server) Run() {
 	stopChan := make(chan struct{}, 1)
 
 	w.startProcessors(stopChan)
@@ -45,12 +73,11 @@ func (w *Worker) Run() {
 	}
 }
 
-func (w *Worker) startProcessors(stop <-chan struct{}) {
+func (w *Server) startProcessors(stop <-chan struct{}) {
 	go w.process(stop)
 }
 
-func (w *Worker) process(stop <-chan struct{}) {
-	opts := *w.Options
+func (w *Server) process(stop <-chan struct{}) {
 	bucket := make(chan struct{}, opts.Concurrency)
 
 	for i := 0; i < opts.Concurrency; i++ {
@@ -96,17 +123,8 @@ func (w *Worker) process(stop <-chan struct{}) {
 	}
 }
 
-func (w *Worker) trapSignals() (c chan os.Signal) {
+func (w *Server) trapSignals() (c chan os.Signal) {
 	c = make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGTERM)
 	return c
-}
-
-func parseOptions() *WorkerOptions {
-	opts := WorkerOptions{}
-
-	flag.IntVar(&opts.Concurrency, "concurrency", 5, "concurrency")
-	flag.Parse()
-
-	return &opts
 }

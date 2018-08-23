@@ -7,11 +7,10 @@ import (
 	"github.com/nandosousafr/superworker/redis"
 )
 
-type MyWorker struct{}
+type myWorker struct{}
 
-func (m *MyWorker) Execute(j superworker.Job, w *superworker.Worker) error {
-	log.Println(j.Args, "testing....")
-	return nil
+func (m *myWorker) Process(job superworker.Job) error {
+
 }
 
 func main() {
@@ -21,14 +20,9 @@ func main() {
 		return
 	}
 
-	worker := superworker.NewWorker()
-	worker.Queues = []string{"normal"}
-	worker.Executors = map[string]superworker.Executor{
-		"put-item-to-service": &MyWorker{},
-	}
+	server := superworker.NewServer()
+	server.Storage = storage
+	server.AddWorker("create-lead", &myWorker{})
+	server.Run()
 
-	worker.AddHandler("put-item-to-service", MyWorker)
-
-	worker.Storage = storage
-	worker.Run()
 }
