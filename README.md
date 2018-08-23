@@ -41,7 +41,7 @@ func main() {
 	worker.Queues = []string{"normal"}
 
 	worker.Handle("put-item-to-service", MyWorker)
-  worker.HandleFunc("put-item-to-service", )
+        worker.HandleFunc("save-to-database", process)
 
 	worker.Storage = storage
 	worker.Run()
