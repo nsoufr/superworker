@@ -48,3 +48,9 @@ func main() {
 }
 
 ```
+
+## Starting Worker
+
+```bash
+go run main.go --concurrency 10
+```
